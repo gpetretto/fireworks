@@ -13,6 +13,8 @@ import subprocess
 from fireworks.queue.queue_adapter import QueueAdapterBase, Command
 from fireworks.utilities.fw_serializers import serialize_fw
 from fireworks.utilities.fw_utilities import log_exception, log_fancy
+import datetime
+from collections import OrderedDict
 
 __author__ = 'Anubhav Jain, Michael Kocher, Shyue Ping Ong, David Waroquiers, Felix Brockherde'
 __copyright__ = 'Copyright 2012, The Materials Project'
@@ -219,3 +221,360 @@ class CommonAdapter(QueueAdapterBase):
             q_name=m_dict.get("_fw_q_name"),
             template_file=m_dict.get("_fw_template_file"),
             **{k: v for k, v in m_dict.items() if not k.startswith("_fw")})
+
+    def _parse_hms(self, time_str):
+        t = datetime.datetime.strptime(time_str, '%H:%M:%S')
+        return datetime.timedelta(hours=t.tm_hour, minutes=t.tm_min, seconds=t.tm_sec).total_seconds()
+
+    def _parse_walltime(self, walltime):
+        """
+        returns the walltime value in seconds
+        """
+        # if int, assume is already in seconds
+        try:
+            seconds = int(walltime)
+            return seconds
+        except:
+            pass
+
+        # HH:MM:SS
+        try:
+            self._parse_hms(walltime)
+        except:
+            pass
+
+        raise ValueError("Couldn't parse walltime: {}".format(walltime))
+
+    def _get_estimated_start_delay_cmd(self):
+        if self.q_name == "SLURM":
+            return ["sbatch", "--test-only", self.get_script_str('.')]
+        elif Command(["showstart", "-h"]).run(timeout=5)[0] == 0:
+            #check if checkstart exists (requires maui, compatible with PBS, LoadLeveler and SGE)
+            num_cores = self['nnodes']*self['ppnode']
+            walltime = self._parse_walltime(self['walltime'])
+            return ["checkstart", str(num_cores)+"@"+str(walltime)]
+        else:
+            raise NotImplementedError("Estimated starting time not implemented for queue type {}.".format(self.q_name))
+
+    def _parse_estimated_start_delay(self, output_str):
+        out_split = output_str.split()
+        if self.q_name == "SLURM":
+            start_time = datetime.datetime.strptime(out_split[6], "%Y-%m-%dT%H:%M:%S")
+            return max(0, start_time-datetime.datetime.now())
+        else:
+            delay_index = out_split.index('in')+1
+            return self._parse_hms(out_split[delay_index])
+
+    @property
+    def job_start_delay(self):
+        """
+        estimation of the starting delay for a standard job from the queue manager in seconds
+        """
+        if self.q_name == "SLURM":
+            cmd = ["sbatch", "--test-only"]
+
+            process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate(self.get_script_str('.'))
+            status = process.returncode
+
+            if status == 0:
+                start_time = datetime.datetime.strptime(stderr.split()[6], "%Y-%m-%dT%H:%M:%S")
+                return max(0, (start_time-datetime.datetime.now()).total_seconds())
+
+
+        elif Command(["checkstart", "-h"]).run(timeout=5)[0] == 0:
+            #check if checkstart exists (requires maui, compatible with PBS, LoadLeveler and SGE)
+            num_cores = self['nnodes']*self['ppnode']
+            walltime = self._parse_walltime(self['walltime'])
+            return ["checkstart", str(num_cores)+"@"+str(walltime)]
+        else:
+            raise NotImplementedError("Estimated starting time not implemented for queue type {}.".format(self.q_name))
+        checkstart = Command(self._get_estimated_start_delay_cmd())
+        p = checkstart.run(timeout=5)
+
+        # parse the result
+        if p[0] == 0:
+            time = self._parse_estimated_start_delay(p[1])
+            return time
+
+        # there's a problem talking to qstat server?
+        msgs = ['Error trying to get the expected delay'
+                'The error response reads: {}'.format(stderr)]
+        queue_logger = self.get_qlogger('qadapter.{}'.format(self.q_name))
+        log_fancy(queue_logger, msgs, 'error')
+        return None
+
+
+    def _get_tot_jobs_in_queue_cmd(self, queue=None):
+        if self.q_name == "PBS":
+            if queue:
+                return ["qstat", "-q", queue]
+            else:
+                return ["qstat", "-q"]
+        elif self.q_name == "SLURM":
+            if queue:
+                return ["squeue", "-o", "%t", "-p", queue]
+            else:
+                return ["squeue", "-o", "%t"]
+        else:
+            raise NotImplementedError("Total number of jobs not implemented for queue type {}.".format(self.q_name))
+
+    def _parse_tot_njobs_in_queue(self, output_str):
+        if self.q_name == "PBS":
+            return int(output_str.split("\n")[-2].split()[1])
+        elif self.q_name == "SLURM":
+            outs = output_str.split('\n')
+            return len([line.split() for line in outs if 'PD' in line])
+        else:
+            raise NotImplementedError("Total number of jobs not implemented for queue type {}.".format(self.q_name))
+
+    def get_tot_njobs_in_queue(self, queue=None):
+        queue_logger = self.get_qlogger('qadapter.{}'.format(self.q_name))
+
+        qstat = Command(self._get_tot_jobs_in_queue_cmd(queue))
+        p = qstat.run(timeout=5)
+
+        # parse the result
+        if p[0] == 0:
+            njobs = self._parse_tot_njobs_in_queue(p[1])
+            queue_logger.info(
+                'The number of jobs currently in the queue is: {}'.format(
+                    njobs))
+            return njobs
+
+        # there's a problem talking to qstat server?
+        msgs = ['Error trying to get the number of jobs in the queue',
+                'The error response reads: {}'.format(p[2])]
+        log_fancy(queue_logger, msgs, 'error')
+        return None
+
+    @property
+    def tot_njobs_in_queue(self):
+        return self.get_tot_njobs_in_queue(queue=self.get('queue', None))
+
+    def _get_job_list_cmd(self, usernames='$USER', queues=None, status='Q'):
+        if usernames == '$USER':
+            usernames = getpass.getuser()
+        if isinstance(usernames, str):
+            usernames=[usernames]
+        if isinstance(queues, str):
+            queues = [queues]
+
+        if self.q_type == 'SLURM':
+            # -r to expand array jobs
+            command = ['squeue', '-r', '-o %i %P %j %u %t %M %l %D %c']
+            if usernames:
+                command.append('-u')
+                command.append(",".join(map(str, usernames)))
+            if queues:
+                command.append('-p')
+                command.append(",".join(map(str, queues)))
+            if not status:
+                pass
+            elif status == 'Q':
+                command.extend(['-t', 'PD'])
+            elif status == 'R':
+                command.extend(['-t', 'R'])
+            else:
+                raise ValueError('Not supported status value {}.'.format(status))
+            return command
+        elif self.q_type == "PBS":
+            # -t to expand array jobs, -w to have long fields
+            #TODO only for pbspro, or new version?
+            command = ['qstat', '-t', '-w']
+            if usernames:
+                command.append('-u')
+                command.append(",".join(map(str, usernames)))
+            if not status:
+                command.append('-a')
+            elif status == 'Q':
+                command.append('-i')
+            elif status == 'R':
+                command.append('-r')
+            else:
+                raise ValueError('Not supported status value {}.'.format(status))
+            if queues:
+                command.append(",".join(map(str, queues)))
+            return command
+        else:
+            raise NotImplementedError("Job list not implemented for queue type {}.".format(self.q_name))
+
+    def _parse_job_list(self, output_str):
+        queue_data = {'id': [], 'queue': [], 'job_name': [], 'user': [], 'status': [], 'elapsed_time': [],
+                      'time_limit': [], 'n_nodes': [], 'n_cores': []}
+        if self.q_type == 'SLURM':
+            lines = output_str.split('\n')
+            # clean the header
+            while len(lines) > 0:
+                h = lines.pop(0)
+                if h.strip().startswith('JOBID'):
+                    break
+            if len(lines) == 0:
+                return queue_data
+            for l in lines:
+                if not l:
+                    continue
+                data = l.split()
+                queue_data['id'].append(data[0])
+                queue_data['queue'].append(data[1])
+                queue_data['job_name'].append(data[2])
+                queue_data['user'].append(data[3])
+                queue_data['status'].append(data[4])
+                queue_data['elapsed_time'].append(data[5])
+                queue_data['time_limit'].append(data[6])
+                queue_data['n_nodes'].append(data[7])
+                queue_data['n_cores'].append(data[8])
+
+        elif self.q_type == "PBS":
+            lines = output_str.split('\n')
+            # clean the header
+            while len(lines) > 0:
+                h = lines.pop(0)
+                if h.strip().startswith('Job'):
+                    # remove one more line
+                    lines.pop(0)
+                    break
+            if len(lines) == 0:
+                return queue_data
+            for l in lines:
+                if not l:
+                    continue
+                data = l.split()
+                queue_data['id'].append(data[0])
+                queue_data['queue'].append(data[2])
+                queue_data['job_name'].append(data[3])
+                queue_data['user'].append(data[1])
+                queue_data['status'].append(data[9])
+                queue_data['elapsed_time'].append('00:00' if data[10] == '--' else data[10])
+                queue_data['time_limit'].append(data[8])
+                queue_data['n_nodes'].append(data[5])
+                queue_data['n_cores'].append(data[6])
+        else:
+            raise NotImplementedError("Job list not implemented for queue type {}.".format(self.q_name))
+
+        return queue_data
+
+    def get_parsed_job_list(self, usernames='$USER', queues=None, status='Q'):
+        qstat = Command(self._get_job_list_cmd(usernames=usernames, queues=queues, status=status))
+        p = qstat.run(timeout=5)
+
+        # parse the result
+        if p[0] == 0:
+            njobs = self._parse_job_list(p[1])
+            return njobs
+
+        msgs = ['Error trying to get the job list'
+                'The error response reads: {}'.format(p[2])]
+        queue_logger = self.get_qlogger('qadapter.{}'.format(self.q_name))
+        log_fancy(queue_logger, msgs, 'error')
+        return None
+
+    def get_tot_cores_in_queue(self, queues=None):
+        queue_data = self.get_parsed_job_list(usernames=None, queues=queues, status='Q')
+        if not queue_data:
+            return None
+        else:
+            tot_cores = 0
+            for cores in queue_data['n_cores']:
+                tot_cores += int(cores)
+            return tot_cores
+
+    @property
+    def tot_cores_in_queue(self):
+        return self.get_tot_cores_in_queue(queues=self['queue'])
+
+    def get_tot_nodes_in_queue(self, queues=None):
+        queue_data = self.get_parsed_job_list(usernames=None, queues=queues, status='Q')
+        if not queue_data:
+            return None
+        else:
+            tot_nodes = 0
+            for nodes in queue_data['n_nodes']:
+                tot_nodes += int(nodes)
+            return tot_nodes
+
+    @property
+    def tot_nodes_in_queue(self):
+        return self.get_tot_nodes_in_queue(queues=self.get('queue', None))
+
+    def get_tot_nodes_online(self, queues=None):
+        if isinstance(queues, str):
+            queues = [queues]
+        if self.q_type == 'PBS':
+            if queues:
+                raise NotImplementedError('Queue option not supported option not supported for PBS queue type')
+            cmd = 'echo $(($(pbsnodes -a | grep "state =" | wc -l) - $(pbsnodes -l| wc -l)))'
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            stdout, stderr = process.communicate()
+            status = process.returncode
+
+            if status == 0:
+                return int(stdout)
+        elif self.q_type == 'SLURM':
+            cmd=['sinfo', '-o %9P %.5a %5A']
+            if queues:
+                cmd.append('-p')
+                cmd.append(",".join(map(str, queues)))
+            nodes = Command(self._get_nodes_number_cmd(queues))
+            status, stdout, stderr = nodes.run(timeout=5)
+            if status == 0:
+                nnodes = 0
+                for l in stdout.split('\n'):
+                    data = l.split()
+                    if data and data[1] == 'up':
+                        nnodes += sum([int(n) for n in data[2].split('/')])
+                return nnodes
+        else:
+            raise NotImplementedError("Nodes number not implemented for queue type {}.".format(self.q_name))
+
+        msgs = ['Error trying to get the number of nodes'
+        'The error response reads: {}'.format(stderr)]
+        queue_logger = self.get_qlogger('qadapter.{}'.format(self.q_name))
+        log_fancy(queue_logger, msgs, 'error')
+        return None
+
+    @property
+    def tot_nodes_online(self):
+        return self.get_tot_nodes_online(queues=self.get('queue', None))
+
+    def _get_cores_number_cmd(self, queues):
+        if isinstance(queues, str):
+            queues = [queues]
+        if self.q_type == 'SLURM':
+            command=['sinfo', '-o %9P %.5a %5c %5A']
+            if queues:
+                command.append('-p')
+                command.append(",".join(map(str, queues)))
+        else:
+            raise NotImplementedError("Cores number not implemented for queue type {}.".format(self.q_name))
+        return command
+
+    def _parse_cores_number(self, output_str):
+        if self.q_type == 'SLURM':
+            ncores = 0
+            for l in output_str.split('\n'):
+                data = l.split()
+                if data and data[1] == 'up':
+                    nnodes = sum([int(n) for n in data[3].split('/')])
+                    ncores_per_node = int(re.sub(r"\D", "", data[2]))
+                    ncores += ncores_per_node*nnodes
+            return ncores
+        else:
+            raise NotImplementedError("Cores number not implemented for queue type {}.".format(self.q_name))
+
+    def get_tot_cores_online(self, queues=None):
+        cores = Command(self._get_cores_number_cmd(queues))
+        p = cores.run(timeout=5)
+        if p[0] == 0:
+            ncores = self._parse_cores_number(p[1])
+            return ncores
+
+        msgs = ['Error trying to get the number of cores'
+        'The error response reads: {}'.format(p[2])]
+        queue_logger = self.get_qlogger('qadapter.{}'.format(self.q_name))
+        log_fancy(queue_logger, msgs, 'error')
+        return None
+
+    @property
+    def tot_cores_online(self):
+        return self.get_tot_cores_online(queues=self.get('queue', None))

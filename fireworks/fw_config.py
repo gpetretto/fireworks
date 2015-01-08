@@ -89,6 +89,8 @@ SORT_FWS = ''  # sort equal priority FWs? "FILO" or "FIFO".
 
 EXCEPT_DETAILS_ON_RERUN = False  # add exception details to the spec when rerunning the FW
 
+SCORE_CALCULATOR = None
+
 
 def override_user_settings():
     module_dir = os.path.dirname(os.path.abspath(__file__))

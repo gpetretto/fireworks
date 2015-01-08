@@ -30,7 +30,7 @@ __date__ = 'Dec 12, 2012'
 
 # TODO: clean up method signatures
 
-def launch_rocket_to_queue(launchpad, fworker, qadapter, launcher_dir='.', reserve=False, strm_lvl='INFO'):
+def launch_rocket_to_queue(launchpad, fworker, qadapter, launcher_dir='.', reserve=False, strm_lvl='INFO', fw_id=None):
     """
     Submit a single job to the queue.
     
@@ -58,6 +58,8 @@ def launch_rocket_to_queue(launchpad, fworker, qadapter, launcher_dir='.', reser
     if '--offline' in qadapter['rocket_launch'] and not reserve:
                 raise ValueError("Must use reservation mode (-r option) of qlaunch when using offline option of rlaunch!!")
 
+    reserve = True if fw_id else reserve
+
     if reserve and 'singleshot' not in qadapter.get('rocket_launch', ''):
         raise ValueError('Reservation mode of queue launcher only works for singleshot Rocket Launcher!')
 
@@ -68,7 +70,7 @@ def launch_rocket_to_queue(launchpad, fworker, qadapter, launcher_dir='.', reser
             with cd(launcher_dir):
                 if reserve:
                     l_logger.debug('finding a FW to reserve...')
-                    fw, launch_id = launchpad.reserve_fw(fworker, launcher_dir)
+                    fw, launch_id = launchpad.reserve_fw(fworker, launcher_dir, fw_id=fw_id)
                     if not fw:
                         l_logger.info('No jobs exist in the LaunchPad for submission to queue!')
                         return False

@@ -63,3 +63,32 @@ class FWorker(FWSerializable):
         if self.category:
             q['spec._category'] = self.category
         return q
+
+
+class RemoteFWorker(FWSerializable):
+    def __init__(self, name, category=None, host=None, config_dir=None, username=None, password=None):
+        self.name = name
+        self.category = category
+        self.host = host
+        self.config_dir = config_dir
+        self.username = username
+        self.password = password
+
+    @recursive_serialize
+    def to_dict(self):
+        return {'name': self.name, 'category': self.category,
+                'host': self.host, 'config_dir': self.config_dir,
+                'username': self.username, 'password': self.password}
+
+    @classmethod
+    @recursive_deserialize
+    def from_dict(cls, m_dict):
+        return cls(m_dict['name'], m_dict['category'],
+                   m_dict['host'], m_dict['config_dir'],
+                   m_dict['username'], m_dict['password'])
+
+    def __str__(self):
+        out = '\n'.join(['name: '+str(self.name), 'categoy: '+str(self.category),
+               'host: '+str(self.host), 'config_dir: '+str(self.config_dir),
+               'username: '+str(self.username), 'password: '+str(self.password)])
+        return out

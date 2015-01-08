@@ -24,6 +24,7 @@ from fireworks.fw_config import LAUNCHPAD_LOC, SORT_FWS, \
 from fireworks.utilities.fw_serializers import FWSerializable, reconstitute_dates
 from fireworks.core.firework import Firework, Launch, Workflow, FWAction, Tracker
 from fireworks.utilities.fw_utilities import get_fw_logger
+from fireworks.core.fworker import RemoteFWorker
 
 
 __author__ = 'Anubhav Jain'
@@ -122,6 +123,7 @@ class LaunchPad(FWSerializable):
         self.offline_runs = self.db.offline_runs
         self.fw_id_assigner = self.db.fw_id_assigner
         self.workflows = self.db.workflows
+        self.fworkers = self.db.fireworkers
 
         self.backup_launch_data = {}
         self.backup_fw_data = {}
@@ -191,6 +193,7 @@ class LaunchPad(FWSerializable):
             self.launches.remove()
             self.workflows.remove()
             self.offline_runs.remove()
+            self.fworkers.remove()
             self._restart_ids(1, 1)
             self.tuneup()
             self.m_logger.info('LaunchPad was RESET.')
@@ -625,8 +628,8 @@ class LaunchPad(FWSerializable):
             if self._check_fw_for_uniqueness(m_fw):
                 return m_fw
 
-    def reserve_fw(self, fworker, launch_dir, host=None, ip=None):
-        m_fw = self._get_a_fw_to_run(fworker.query)
+    def reserve_fw(self, fworker, launch_dir, host=None, ip=None, fw_id=None):
+        m_fw = self._get_a_fw_to_run(fworker.query, fw_id)
         if not m_fw:
             return None, None
             # create a launch
@@ -1109,6 +1112,20 @@ class LaunchPad(FWSerializable):
     # support for job packing
     def log_message(self, level, message):
         self.m_logger.log(level, message)
+
+    def upsert_fworker(self, fworker):
+        self.fworkers.find_and_modify({'name': fworker.name}, fworker.to_dict(), upsert=True)
+
+    def get_fworkers(self, query={}):
+        fworkers = []
+        for fwk in self.fworkers.find(query):
+            fworkers.append(RemoteFWorker.from_dict(fwk))
+        return fworkers
+
+    def get_first_fw_to_run(self, blacklist=None, query={}):
+        if blacklist:
+            query['fw_id'] = {'$nin': blacklist}
+        return self._get_a_fw_to_run(query=query, checkout=False)
 
 
 class LazyFirework(object):

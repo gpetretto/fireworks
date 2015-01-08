@@ -51,7 +51,7 @@ def do_launch(args):
                   args.maxjobs_block, args.sleep, args.reserve, args.loglvl)
     else:
         launch_rocket_to_queue(launchpad, fworker, queueadapter,
-                               args.launch_dir, args.reserve, args.loglvl)
+                               args.launch_dir, args.reserve, args.loglvl, args.fw_id)
 
 def qlaunch():
     m_description = 'This program is used to submit jobs to a queueing system. Details of the job and queue \
@@ -117,6 +117,8 @@ def qlaunch():
                               default=500, type=int)
     rapid_parser.add_argument('--nlaunches', help='num_launches (int or "infinite"; default 0 is all jobs in DB)', default=0)
     rapid_parser.add_argument('--sleep', help='sleep time between loops', default=None, type=int)
+
+    single_parser.add_argument('-f', '--fw_id', help='specific fw_id to run', default=None, type=int)
 
     args = parser.parse_args()
 

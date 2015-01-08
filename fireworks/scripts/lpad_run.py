@@ -19,14 +19,15 @@ import yaml
 
 from fireworks.fw_config import RESERVATION_EXPIRATION_SECS, \
     RUN_EXPIRATION_SECS, PW_CHECK_NUM, MAINTAIN_INTERVAL, CONFIG_FILE_DIR, \
-    LAUNCHPAD_LOC
+    LAUNCHPAD_LOC, QUEUEADAPTER_LOC, FWORKER_LOC, SCORE_CALCULATOR
 from fireworks.core.launchpad import LaunchPad
 from fireworks.core.firework import Workflow, Firework
 from fireworks import __version__ as FW_VERSION
 from fireworks import FW_INSTALL_DIR
 from fireworks.user_objects.firetasks.script_task import ScriptTask
-from fireworks.utilities.fw_serializers import DATETIME_HANDLER, recursive_dict
+from fireworks.utilities.fw_serializers import DATETIME_HANDLER, recursive_dict, load_object
 from fireworks.features.stats import FWStats
+from fireworks.core.fworker import FWorker, RemoteFWorker
 from six.moves import input
 
 
@@ -548,6 +549,47 @@ def get_output_func(format):
         return lambda x: yaml.dump(recursive_dict(x, preserve_unicode=False), default_flow_style=False)
 
 
+def calculate_score(args):
+    sc = load_object({'_fw_name': args.score_calculator, '_qadapter_file': args.queueadapter_file})
+    if not sc:
+        raise ValueError("Couldn't find a score calculator corresponding to {}.".format(args.score_calculator))
+
+    job_parameters = json.loads(args.job_parameters) if args.job_parameters else None
+    score = sc.calculate_score(job_parameters)
+    print('Actual score: {}'.format(score))
+
+
+def upsert_fworker(args):
+    lp = get_lp(args)
+    name = None
+    category = None
+    if args.fworker_file and os.path.exists(args.fworker_file):
+        fworker = FWorker.from_file(args.fworker_file)
+        name = fworker.name
+        category = fworker.category
+    if args.name:
+        name = args.name
+    if args.category:
+        category = args.category
+
+    if not name:
+        raise ValueError("Worker name should be specified.")
+
+    fworker = RemoteFWorker(name, category, args.host[0], args.config_dir, args.username, args.password)
+    lp.upsert_fworker(fworker)
+
+
+def get_fworkers(args):
+    lp = get_lp(args)
+    query = {}
+    if args.names:
+        query['name'] = {'$in': args.names}
+
+    fworkers = lp.get_fworkers(query)
+    for worker in fworkers:
+        print(worker)
+
+
 def lpad():
     m_description = 'A command line interface to FireWorks. For more help on a specific command, ' \
                     'type "lpad <command> -h".'
@@ -868,6 +910,33 @@ def lpad():
     identify_catastrophes_parser.add_argument('-i', '--include_ids', action="store_true")
     identify_catastrophes_parser.add_argument('-r', '--runtime_stats', action="store_true")
     identify_catastrophes_parser.set_defaults(func=report)
+
+    calculate_score_parser = subparsers.add_parser('calculate_score', help='Calculates the score of the queue.')
+    calculate_score_parser.add_argument('-jp', '--job_parameters', default=None,
+                                        help='Job parameters. Provided as a json encoded dict to override the queue adapter defaults')
+    calculate_score_parser.add_argument('-sc', '--score_calculator', help='Score calculator class',
+                        default=SCORE_CALCULATOR)
+    calculate_score_parser.add_argument('-q', '--queueadapter_file', help='Path to queueadapter file',
+                        default=QUEUEADAPTER_LOC)
+    calculate_score_parser.set_defaults(func=calculate_score)
+
+    upsert_fworker_parser = subparsers.add_parser('upsert_fworker',
+                                                         help='Add a remote fireworker to the db.')
+    upsert_fworker_parser.add_argument('-w', '--fworker_file', help='path to fworker file', default=FWORKER_LOC)
+    upsert_fworker_parser.add_argument('-n', '--name', help='Worker name')
+    upsert_fworker_parser.add_argument('-ca', '--category', help='Worker category')
+    upsert_fworker_parser.add_argument('--host', required=True, nargs=1, help='Worker aaddress')
+    upsert_fworker_parser.add_argument('-c', '--config_dir',
+                                           help='path to a directory containing the LaunchPad file (used if -l unspecified)',
+                                           default=None)
+    upsert_fworker_parser.add_argument('-u', '--username', help='Username', default=None)
+    upsert_fworker_parser.add_argument('-p', '--password', help='Password', default=None)
+    upsert_fworker_parser.set_defaults(func=upsert_fworker)
+
+    get_fworkers_parser = subparsers.add_parser('get_fworkers', help='Get remote fireworkers.')
+    get_fworkers_parser.add_argument('-n', '--names', help='Worker names', nargs='*')
+    get_fworkers_parser.set_defaults(func=get_fworkers)
+
 
     args = parser.parse_args()
 
