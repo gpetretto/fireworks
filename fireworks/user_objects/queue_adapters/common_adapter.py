@@ -268,7 +268,8 @@ class CommonAdapter(QueueAdapterBase):
     @property
     def job_start_delay(self):
         """
-        estimation of the starting delay for a standard job from the queue manager in seconds
+        Estimation of the starting delay for a standard job from the queue manager.
+        Return the delay in seconds
         """
         if self.q_name == "SLURM":
             cmd = ["sbatch", "--test-only"]
@@ -304,7 +305,6 @@ class CommonAdapter(QueueAdapterBase):
         log_fancy(queue_logger, msgs, 'error')
         return None
 
-
     def _get_tot_jobs_in_queue_cmd(self, queue=None):
         if self.q_name == "PBS":
             if queue:
@@ -329,6 +329,10 @@ class CommonAdapter(QueueAdapterBase):
             raise NotImplementedError("Total number of jobs not implemented for queue type {}.".format(self.q_name))
 
     def get_tot_njobs_in_queue(self, queue=None):
+        """
+        Helper function to get the total number of queued jobs for the specified queue.
+        Sums all the queues if queue=None
+        """
         queue_logger = self.get_qlogger('qadapter.{}'.format(self.q_name))
 
         qstat = Command(self._get_tot_jobs_in_queue_cmd(queue))
@@ -362,7 +366,7 @@ class CommonAdapter(QueueAdapterBase):
 
         if self.q_type == 'SLURM':
             # -r to expand array jobs
-            command = ['squeue', '-r', '-o %i %P %j %u %t %M %l %D %c']
+            command = ['squeue', '-r', '-o %i %P %j %u %t %M %l %D %C']
             if usernames:
                 command.append('-u')
                 command.append(",".join(map(str, usernames)))
@@ -379,9 +383,8 @@ class CommonAdapter(QueueAdapterBase):
                 raise ValueError('Not supported status value {}.'.format(status))
             return command
         elif self.q_type == "PBS":
-            # -t to expand array jobs, -w to have long fields
-            #TODO only for pbspro, or new version?
-            command = ['qstat', '-t', '-w']
+            # -t to expand array jobs,
+            command = ['qstat', '-t']
             if usernames:
                 command.append('-u')
                 command.append(",".join(map(str, usernames)))
@@ -400,8 +403,7 @@ class CommonAdapter(QueueAdapterBase):
             raise NotImplementedError("Job list not implemented for queue type {}.".format(self.q_name))
 
     def _parse_job_list(self, output_str):
-        queue_data = {'id': [], 'queue': [], 'job_name': [], 'user': [], 'status': [], 'elapsed_time': [],
-                      'time_limit': [], 'n_nodes': [], 'n_cores': []}
+        queue_data = []
         if self.q_type == 'SLURM':
             lines = output_str.split('\n')
             # clean the header
@@ -415,15 +417,9 @@ class CommonAdapter(QueueAdapterBase):
                 if not l:
                     continue
                 data = l.split()
-                queue_data['id'].append(data[0])
-                queue_data['queue'].append(data[1])
-                queue_data['job_name'].append(data[2])
-                queue_data['user'].append(data[3])
-                queue_data['status'].append(data[4])
-                queue_data['elapsed_time'].append(data[5])
-                queue_data['time_limit'].append(data[6])
-                queue_data['n_nodes'].append(data[7])
-                queue_data['n_cores'].append(data[8])
+                queue_data.append({'id': data[0], 'queue': data[1], 'job_name': data[2], 'user': data[3],
+                                   'status': data[4], 'elapsed_time': data[5], 'time_limit': data[6],
+                                   'n_nodes': data[7], 'n_cores':data[8]})
 
         elif self.q_type == "PBS":
             lines = output_str.split('\n')
@@ -440,21 +436,26 @@ class CommonAdapter(QueueAdapterBase):
                 if not l:
                     continue
                 data = l.split()
-                queue_data['id'].append(data[0])
-                queue_data['queue'].append(data[2])
-                queue_data['job_name'].append(data[3])
-                queue_data['user'].append(data[1])
-                queue_data['status'].append(data[9])
-                queue_data['elapsed_time'].append('00:00' if data[10] == '--' else data[10])
-                queue_data['time_limit'].append(data[8])
-                queue_data['n_nodes'].append(data[5])
-                queue_data['n_cores'].append(data[6])
+                queue_data.append({'id': data[0], 'queue': data[2], 'job_name': data[3], 'user': data[1],
+                                   'status': data[9], 'elapsed_time': '00:00' if data[10] == '--' else data[10],
+                                   'time_limit': data[8], 'n_nodes': data[5], 'n_cores':data[6]})
+
         else:
             raise NotImplementedError("Job list not implemented for queue type {}.".format(self.q_name))
 
         return queue_data
 
     def get_parsed_job_list(self, usernames='$USER', queues=None, status='Q'):
+        """
+        Helper function to get a detailed list of job according to filter parameters
+
+        :param usernames: (str or list) username(s) used to filter the job list. '$USER' to get the current user
+        :param queues: (str or list) queue name(s) used to filter the job list
+        :param status: (str) job status. 'Q' for queued, 'R' for running, None for all the states
+        :return: (list) a list of dictionaries, each containing job details: id, queue, job_name, user, status,
+                 elapsed_time, time_limit, n_nodes, n_cores
+        """
+
         qstat = Command(self._get_job_list_cmd(usernames=usernames, queues=queues, status=status))
         p = qstat.run(timeout=5)
 
@@ -469,35 +470,55 @@ class CommonAdapter(QueueAdapterBase):
         log_fancy(queue_logger, msgs, 'error')
         return None
 
-    def get_tot_cores_in_queue(self, queues=None):
+    def get_cores_requested_in_queue(self, queues=None):
+        """
+        Helper function to get the total number of cores requested by queued jobs for the specified queue.
+        Sums all the queues if queue=None
+        """
         queue_data = self.get_parsed_job_list(usernames=None, queues=queues, status='Q')
         if not queue_data:
-            return None
+            return 0
         else:
-            tot_cores = 0
-            for cores in queue_data['n_cores']:
-                tot_cores += int(cores)
+            tot_cores = sum(int(i['n_cores']) for i in queue_data)
             return tot_cores
 
     @property
-    def tot_cores_in_queue(self):
-        return self.get_tot_cores_in_queue(queues=self['queue'])
+    def cores_requested_in_queue(self):
+        return self.get_cores_requested_in_queue(queues=self.get('queue',None))
 
-    def get_tot_nodes_in_queue(self, queues=None):
+    def get_nodes_requested_in_queue(self, queues=None):
+        """
+        Helper function to get the total number of nodes requested by queued jobs for the specified queue.
+        Sums all the queues if queue=None
+        """
         queue_data = self.get_parsed_job_list(usernames=None, queues=queues, status='Q')
         if not queue_data:
-            return None
+            return 0
         else:
-            tot_nodes = 0
-            for nodes in queue_data['n_nodes']:
-                tot_nodes += int(nodes)
+            tot_nodes = sum(int(i['n_nodes']) for i in queue_data)
             return tot_nodes
 
     @property
-    def tot_nodes_in_queue(self):
-        return self.get_tot_nodes_in_queue(queues=self.get('queue', None))
+    def nodes_requested_in_queue(self):
+        return self.get_nodes_requested_in_queue(queues=self.get('queue', None))
 
-    def get_tot_nodes_online(self, queues=None):
+    def _get_nodes_number_cmd(self, queues):
+        if isinstance(queues, str):
+            queues = [queues]
+        if self.q_type == 'SLURM':
+            command=['sinfo', '-o %9P %.5a %5A']
+            if queues:
+                command.append('-p')
+                command.append(",".join(map(str, queues)))
+        else:
+            raise NotImplementedError("Cores number not implemented for queue type {}.".format(self.q_name))
+        return command
+
+    def get_nodes_online(self, queues=None):
+        """
+        Helper function to get the total number of nodes online for the specified queue.
+        Sums all the queues if queue=None
+        """
         if isinstance(queues, str):
             queues = [queues]
         if self.q_type == 'PBS':
@@ -511,7 +532,7 @@ class CommonAdapter(QueueAdapterBase):
             if status == 0:
                 return int(stdout)
         elif self.q_type == 'SLURM':
-            cmd=['sinfo', '-o %9P %.5a %5A']
+            cmd = ['sinfo', '-o %9P %.5a %5A']
             if queues:
                 cmd.append('-p')
                 cmd.append(",".join(map(str, queues)))
@@ -534,8 +555,8 @@ class CommonAdapter(QueueAdapterBase):
         return None
 
     @property
-    def tot_nodes_online(self):
-        return self.get_tot_nodes_online(queues=self.get('queue', None))
+    def nodes_online(self):
+        return self.get_nodes_online(queues=self.get('queue', None))
 
     def _get_cores_number_cmd(self, queues):
         if isinstance(queues, str):
@@ -562,7 +583,11 @@ class CommonAdapter(QueueAdapterBase):
         else:
             raise NotImplementedError("Cores number not implemented for queue type {}.".format(self.q_name))
 
-    def get_tot_cores_online(self, queues=None):
+    def get_cores_online(self, queues=None):
+        """
+        Helper function to get the total number of cores online for the specified queue.
+        Sums all the queues if queue=None
+        """
         cores = Command(self._get_cores_number_cmd(queues))
         p = cores.run(timeout=5)
         if p[0] == 0:
@@ -576,5 +601,5 @@ class CommonAdapter(QueueAdapterBase):
         return None
 
     @property
-    def tot_cores_online(self):
-        return self.get_tot_cores_online(queues=self.get('queue', None))
+    def cores_online(self):
+        return self.get_cores_online(queues=self.get('queue', None))

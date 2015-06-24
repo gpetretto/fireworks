@@ -19,7 +19,7 @@ import yaml
 
 from fireworks.fw_config import RESERVATION_EXPIRATION_SECS, \
     RUN_EXPIRATION_SECS, PW_CHECK_NUM, MAINTAIN_INTERVAL, CONFIG_FILE_DIR, \
-    LAUNCHPAD_LOC, QUEUEADAPTER_LOC, FWORKER_LOC, SCORE_CALCULATOR
+    LAUNCHPAD_LOC, QUEUEADAPTER_LOC, FWORKER_LOC, PENALTY_CALCULATOR
 from fireworks.core.launchpad import LaunchPad
 from fireworks.core.firework import Workflow, Firework
 from fireworks import __version__ as FW_VERSION
@@ -194,6 +194,7 @@ def get_fws(args):
         for id in ids:
             fw = lp.get_fw_by_id(id)
             d = fw.to_dict()
+            d['state'] = d.get('state', 'WAITING')
             if args.display_format == 'more' or args.display_format == 'less':
                 if 'archived_launches' in d:
                     del d['archived_launches']
@@ -413,7 +414,7 @@ def webgui(args):
     os.environ["FWDB_CONFIG"] = json.dumps(get_lp(args).to_dict())
     from fireworks.flask_site.app import app
     from multiprocessing import Process
-    p1 = Process(target=app.run, kwargs={"host": args.host, "port": args.port})
+    p1 = Process(target=app.run, kwargs={"host": args.host, "port": args.port, "debug": False})
     p1.start()
     if not args.server_mode:
         import webbrowser
@@ -549,14 +550,17 @@ def get_output_func(format):
         return lambda x: yaml.dump(recursive_dict(x, preserve_unicode=False), default_flow_style=False)
 
 
-def calculate_score(args):
-    sc = load_object({'_fw_name': args.score_calculator, '_qadapter_file': args.queueadapter_file})
+def calculate_penalty(args):
+    if not args.penalty_calculator:
+        raise ValueError("A penalty calculator should be specified either in the command or in the FW_config file.")
+    sc = load_object({'_fw_name': args.penalty_calculator, '_qadapter_file': args.queueadapter_file})
+
     if not sc:
-        raise ValueError("Couldn't find a score calculator corresponding to {}.".format(args.score_calculator))
+        raise ValueError("Couldn't find a penalty calculator corresponding to {}.".format(args.penalty_calculator))
 
     job_parameters = json.loads(args.job_parameters) if args.job_parameters else None
-    score = sc.calculate_score(job_parameters)
-    print('Actual score: {}'.format(score))
+    penalty = sc.calculate_penalty(job_parameters)
+    print('Actual penalty: {}'.format(penalty))
 
 
 def upsert_fworker(args):
@@ -575,7 +579,7 @@ def upsert_fworker(args):
     if not name:
         raise ValueError("Worker name should be specified.")
 
-    fworker = RemoteFWorker(name, category, args.host[0], args.config_dir, args.username, args.password)
+    fworker = RemoteFWorker(name, args.priority, category, args.host[0], args.port, args.config_dir, args.username, args.password)
     lp.upsert_fworker(fworker)
 
 
@@ -587,7 +591,7 @@ def get_fworkers(args):
 
     fworkers = lp.get_fworkers(query)
     for worker in fworkers:
-        print(worker)
+        print(args.output(worker.to_dict()))
 
 
 def lpad():
@@ -911,26 +915,28 @@ def lpad():
     identify_catastrophes_parser.add_argument('-r', '--runtime_stats', action="store_true")
     identify_catastrophes_parser.set_defaults(func=report)
 
-    calculate_score_parser = subparsers.add_parser('calculate_score', help='Calculates the score of the queue.')
-    calculate_score_parser.add_argument('-jp', '--job_parameters', default=None,
-                                        help='Job parameters. Provided as a json encoded dict to override the queue adapter defaults')
-    calculate_score_parser.add_argument('-sc', '--score_calculator', help='Score calculator class',
-                        default=SCORE_CALCULATOR)
-    calculate_score_parser.add_argument('-q', '--queueadapter_file', help='Path to queueadapter file',
+    calculate_penalty_parser = subparsers.add_parser('calculate_penalty', help='Calculates the penalty of the queue.')
+    calculate_penalty_parser.add_argument('-jp', '--job_parameters', default=None,
+                                          help='Job parameters. Provided as a json encoded dict to override the queue adapter defaults')
+    calculate_penalty_parser.add_argument('-sc', '--penalty_calculator', help='Penalty calculator class',
+                        default=PENALTY_CALCULATOR)
+    calculate_penalty_parser.add_argument('-q', '--queueadapter_file', help='Path to queueadapter file',
                         default=QUEUEADAPTER_LOC)
-    calculate_score_parser.set_defaults(func=calculate_score)
+    calculate_penalty_parser.set_defaults(func=calculate_penalty)
 
     upsert_fworker_parser = subparsers.add_parser('upsert_fworker',
                                                          help='Add a remote fireworker to the db.')
     upsert_fworker_parser.add_argument('-w', '--fworker_file', help='path to fworker file', default=FWORKER_LOC)
+    upsert_fworker_parser.add_argument('-p', '--priority', help='Fworker priority', default=0, type=int)
     upsert_fworker_parser.add_argument('-n', '--name', help='Worker name')
     upsert_fworker_parser.add_argument('-ca', '--category', help='Worker category')
-    upsert_fworker_parser.add_argument('--host', required=True, nargs=1, help='Worker aaddress')
+    upsert_fworker_parser.add_argument('--host', required=True, nargs=1, help='Worker address')
+    upsert_fworker_parser.add_argument('--port', nargs=1, help='Worker ssh port', default=22, type=int)
     upsert_fworker_parser.add_argument('-c', '--config_dir',
                                            help='path to a directory containing the LaunchPad file (used if -l unspecified)',
                                            default=None)
     upsert_fworker_parser.add_argument('-u', '--username', help='Username', default=None)
-    upsert_fworker_parser.add_argument('-p', '--password', help='Password', default=None)
+    upsert_fworker_parser.add_argument('-P', '--password', help='Password', default=None)
     upsert_fworker_parser.set_defaults(func=upsert_fworker)
 
     get_fworkers_parser = subparsers.add_parser('get_fworkers', help='Get remote fireworkers.')

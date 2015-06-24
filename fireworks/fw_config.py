@@ -89,7 +89,7 @@ SORT_FWS = ''  # sort equal priority FWs? "FILO" or "FIFO".
 
 EXCEPT_DETAILS_ON_RERUN = False  # add exception details to the spec when rerunning the FW
 
-SCORE_CALCULATOR = None
+PENALTY_CALCULATOR = None
 
 
 def override_user_settings():

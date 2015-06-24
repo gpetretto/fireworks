@@ -66,29 +66,48 @@ class FWorker(FWSerializable):
 
 
 class RemoteFWorker(FWSerializable):
-    def __init__(self, name, category=None, host=None, config_dir=None, username=None, password=None):
+    def __init__(self, name, priority=0, category=None, host=None, port=None, config_dir=None, username=None,
+                 password=None):
         self.name = name
+        self.priority = priority
         self.category = category
         self.host = host
+        self.port = port
         self.config_dir = config_dir
         self.username = username
         self.password = password
 
     @recursive_serialize
     def to_dict(self):
-        return {'name': self.name, 'category': self.category,
-                'host': self.host, 'config_dir': self.config_dir,
+        return {'name': self.name, 'priority': self.priority, 'category': self.category,
+                'host': self.host, 'port':self.port, 'config_dir': self.config_dir,
                 'username': self.username, 'password': self.password}
 
     @classmethod
     @recursive_deserialize
     def from_dict(cls, m_dict):
-        return cls(m_dict['name'], m_dict['category'],
-                   m_dict['host'], m_dict['config_dir'],
+        return cls(m_dict['name'], m_dict['priority'], m_dict['category'],
+                   m_dict['host'], m_dict['port'], m_dict['config_dir'],
                    m_dict['username'], m_dict['password'])
 
     def __str__(self):
-        out = '\n'.join(['name: '+str(self.name), 'categoy: '+str(self.category),
-               'host: '+str(self.host), 'config_dir: '+str(self.config_dir),
+        out = '\n'.join(['name: '+str(self.name), 'priority: '+str(self.priority), 'categoy: '+str(self.category),
+               'host: '+str(self.host), 'port: '+str(self.port), 'config_dir: '+str(self.config_dir),
                'username: '+str(self.username), 'password: '+str(self.password)])
         return out
+
+    @property
+    def full_host(self):
+        """
+        full host created as username@host:port
+        lazy property. evaluated only once.
+        """
+        try:
+            return self._full_host
+        except AttributeError:
+            self._full_host = self.host
+            if self.username:
+                self._full_host = self.username + '@' + self._full_host
+            if self.port:
+                self._full_host = self._full_host + ':' + str(self.port)
+            return self._full_host

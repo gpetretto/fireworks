@@ -1,9 +1,9 @@
-from flask import Flask, url_for, render_template, request
+from flask import Flask, render_template, request
+from fireworks.flask_site.helpers import get_totals
 from fireworks.utilities.fw_serializers import DATETIME_HANDLER
 from pymongo import DESCENDING
 import os, json
 from fireworks.core.launchpad import LaunchPad
-from helpers import get_totals
 from flask.ext.paginate import Pagination
 
 app = Flask(__name__)
@@ -58,7 +58,7 @@ def home():
             "state": item['state'],
             "fireworks": list(lp.fireworks.find({"fw_id": { "$in": item["nodes"]} }, 
                 limit=PER_PAGE, sort=[('created_on', DESCENDING)], 
-                fields=["state", "name", "fw_id"] ))
+                projection=["state", "name", "fw_id"] ))
         })
     return render_template('home.html', **locals())
 
@@ -111,7 +111,7 @@ def fw_states(state):
       page = int(request.args.get('page', 1))
   except ValueError:
       page = 1  
-  rows = list(db.find(query, fields=["fw_id", "name", "created_on"])
+  rows = list(db.find(query, projection=["fw_id", "name", "created_on"])
     .skip(page-1).sort([("created_on", DESCENDING)]).limit(PER_PAGE))
   pagination = Pagination(page=page, total=fw_count,  
     record_name='fireworks', per_page=PER_PAGE)

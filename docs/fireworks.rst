@@ -6,7 +6,6 @@ Subpackages
 
 .. toctree::
 
-    fireworks.base_site
     fireworks.core
     fireworks.features
     fireworks.flask_site
@@ -23,14 +22,6 @@ fireworks.fw_config module
 --------------------------
 
 .. automodule:: fireworks.fw_config
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-fireworks.manage module
------------------------
-
-.. automodule:: fireworks.manage
     :members:
     :undoc-members:
     :show-inheritance:

@@ -13,6 +13,8 @@ Optional parameters
 ===================
 
 * **args**: *(list)* - a list of args to feed into the function
+* **kwargs**: *(dict)* - Dictionary of keyword args. Default is empty.
+* **auto_kwargs**: *(bool)* - If True, all other params not starting with "_" are automatically supplied as keyword args
 * **stored_data_varname**: *(str)* If this is a string that does not evaluate to False, the output of the function will be stored as FWAction(stored_data={stored_data_varname: output}). The name is deliberately long to avoid potential name conflicts.
 
 Example

@@ -12,7 +12,8 @@ import sys
 import time
 from fireworks.fw_config import LAUNCHPAD_LOC
 from fireworks.core.launchpad import LaunchPad
-from fireworks.queue.distributed_launcher import assign_rocket_to_queue
+from fireworks.queue.distributed_launcher import assign_rocket_to_queue, rapidfire
+
 
 def do_launch(args):
     if not args.launchpad_file and os.path.exists(
@@ -25,16 +26,14 @@ def do_launch(args):
     args.loglvl = 'CRITICAL' if args.silencer else args.loglvl
 
     if args.command == 'rapidfire':
-        pass
-        # rapidfire(launchpad, fworker, queueadapter, args.launch_dir,
-        #           args.nlaunches, args.maxjobs_queue,
-        #           args.maxjobs_block, args.sleep, args.reserve, args.loglvl)
+        rapidfire(launchpad, args.launch_dir, args.nlaunches, args.sleep, args.blacklist_reset_freq, args.loglvl)
     else:
-        assign_rocket_to_queue(launchpad, args.loglvl)
+        assign_rocket_to_queue(launchpad, args.loglvl, args.launch_dir)
+
 
 def dlaunch():
     m_description = 'This program is used to submit jobs to a remote queueing system in a distributed way,  \
-    according to the score provided by the available resources. '
+    according to the penalty provided by the available resources. '
 
     parser = ArgumentParser(description=m_description)
     subparsers = parser.add_subparsers(help='command', dest='command')
@@ -47,7 +46,7 @@ def dlaunch():
                              "mode.",
                         type=int,
                         default=0)
-    parser.add_argument('--launch_dir', help='directory to launch the job / rapid-fire', default='.')
+    parser.add_argument('--launch_dir', help='remote directory to launch the job', default='.')
     parser.add_argument('--logdir', help='path to a directory for logging', default=None)
     parser.add_argument('--loglvl', help='level to print log messages', default='INFO')
     parser.add_argument('-s', '--silencer', help='shortcut to mute log messages', action='store_true')
@@ -59,6 +58,8 @@ def dlaunch():
                               type=int)
     rapid_parser.add_argument('--nlaunches', help='num_launches (int or "infinite"; default 0 is all jobs in DB)', default=0)
     rapid_parser.add_argument('--sleep', help='sleep time between loops', default=None, type=int)
+    rapid_parser.add_argument('-br', '--blacklist_reset_freq', default=20, type=int,
+                              help='Number of rounds after which the list of blacklisted FW ids is reset')
 
     args = parser.parse_args()
 
@@ -68,7 +69,7 @@ def dlaunch():
         if interval > 0:
             print("Next run in {} seconds... Press Ctrl-C to exit at any "
                   "time.".format(interval))
-            time.sleep(args.daemon)
+            time.sleep(interval)
         else:
             break
 

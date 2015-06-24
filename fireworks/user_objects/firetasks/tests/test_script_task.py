@@ -36,8 +36,19 @@ class ScriptTaskTest(unittest.TestCase):
 class PyTaskTest(unittest.TestCase):
 
     def test_task(self):
-        p = PyTask(func="json.dumps", obj={"hello": "world"},
+        p = PyTask(func="json.dumps", kwargs={"obj":{"hello": "world"}},
                        stored_data_varname="json")
+        a = p.run_task({})
+        self.assertEqual(a.stored_data["json"], '{"hello": "world"}')
+        p = PyTask(func="pow", args=[3, 2], stored_data_varname="data")
+        a = p.run_task({})
+        self.assertEqual(a.stored_data["data"], 9)
+        p = PyTask(func="print", args=[3])
+        p.run_task({})
+
+    def test_task_auto_kwargs(self):
+        p = PyTask(func="json.dumps", obj={"hello": "world"},
+                       stored_data_varname="json", auto_kwargs=True)
         a = p.run_task({})
         self.assertEqual(a.stored_data["json"], '{"hello": "world"}')
         p = PyTask(func="pow", args=[3, 2], stored_data_varname="data")

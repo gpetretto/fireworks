@@ -2,6 +2,37 @@
 FireWorks Changelog
 ===================
 
+**v1.07**
+
+* fix bug in offline mode
+
+**v1.06**
+.. caution:: Offline mode unusable in this release
+
+* Pymongo3 compatibility
+* fix double tab open on lpad webgui (G. Pettreto)
+* show FW WAITING state
+* unit test offline mode
+
+**v1.05**
+
+.. caution:: The default behavior for PyTask handling of kwargs has changed. To maintain legacy behavior, update the "auto_kwargs" option to True in your FireTasks.
+.. caution:: Offline mode unusable in this release
+
+* Update PyTask kwargs handling (J. Kirkham)
+* Fix writing of FW.json files with _launch_dir param (G. Petretto)
+* update PBS template (K. Matthew)
+* minor fixes (J. Kirkham)
+
+**v1.04**
+
+.. note:: v1.00-v1.03 are skipped due to problems in pip installation
+
+* fix non-default host/port on Flask site
+* remove base site (old frontend)
+* address installation issues (MANIFEST.in, package_data)
+* improve unit tests
+
 **v0.99**
 
 .. note:: v0.98 is skipped, as it has a faulty dependency.

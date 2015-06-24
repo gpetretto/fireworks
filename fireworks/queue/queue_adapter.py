@@ -161,6 +161,72 @@ class QueueAdapterBase(collections.defaultdict, FWSerializable):
         else:
             return get_fw_logger(name, stream_level='CRITICAL')
 
+    @property
+    def cores_online(self):
+        """
+        Optional property. Useful only for penalty calculators
+
+        Returns the number of cores online associated with the current queue adapter
+
+        :return: (int) number of cores online
+        """
+        raise NotImplementedError("The property cores_online has no default implementation")
+
+    @property
+    def nodes_online(self):
+        """
+        Optional property. Useful only for penalty calculators
+
+        Returns the number of nodes online associated with the current queue adapter
+
+        :return: (int) number of nodes online
+        """
+        raise NotImplementedError("The property nodes_online has no default implementation")
+
+    @property
+    def cores_requested_in_queue(self):
+        """
+        Optional property. Useful only for penalty calculators
+
+        Returns the number of cores that have been requested by jobs queued that
+
+        :return: (int) number of core requested
+        """
+        raise NotImplementedError("The property cores_requested_in_queue has no default implementation")
+
+    @property
+    def nodes_requested_in_queue(self):
+        """
+        Optional property. Useful only for penalty calculators
+
+        Returns the number of nodes that have been requested by queued jobs
+
+        :return: (int) number of nodes requested
+        """
+        raise NotImplementedError("The property nodes_requested_in_queue has no default implementation")
+
+    @property
+    def tot_njobs_in_queue(self):
+        """
+        Optional property. Useful only for penalty calculators
+
+        Returns the total number of queued jobs
+
+        :return: (int) number of queued online
+        """
+        raise NotImplementedError("The property njobs_in_queue has no default implementation")
+
+    @property
+    def job_start_delay(self):
+        """
+        Optional property. Useful only for penalty calculators
+
+        Returns an estimate provided by the queue manager of the delay required for the job to start running
+
+        :return: (int) delays in seconds
+        """
+        raise NotImplementedError("The property job_start_delay has no default implementation")
+
 
 class QScriptTemplate(string.Template):
     delimiter = '$$'
