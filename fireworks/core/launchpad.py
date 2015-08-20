@@ -15,7 +15,7 @@ import time
 import traceback
 from collections import OrderedDict, defaultdict
 
-from pymongo.mongo_client import MongoClient
+from pymongo import MongoClient
 from pymongo import DESCENDING, ASCENDING
 
 from fireworks.fw_config import LAUNCHPAD_LOC, SORT_FWS, \
@@ -302,7 +302,7 @@ class LaunchPad(FWSerializable):
             raise ValueError("Could not find a Workflow with fw_id: {}".format(fw_id))
         fws = map(self.get_fw_by_id, links_dict["nodes"])
         return Workflow(fws, links_dict['links'], links_dict['name'],
-                        links_dict['metadata'])
+                        links_dict['metadata'], links_dict['created_on'], links_dict['updated_on'])
 
     def get_wf_by_fw_id_lzyfw(self, fw_id):
         """
@@ -324,7 +324,8 @@ class LaunchPad(FWSerializable):
             fw_states = None
 
         return Workflow(fws, links_dict['links'], links_dict['name'],
-                        links_dict['metadata'], fw_states=fw_states)
+                        links_dict['metadata'], links_dict['created_on'],
+                        links_dict['updated_on'], fw_states)
 
     def delete_wf(self, fw_id):
         links_dict = self.workflows.find_one({'nodes': fw_id})
@@ -745,9 +746,10 @@ class LaunchPad(FWSerializable):
         if fizzle or rerun:
             for lid in lost_launch_ids:
                 self.mark_fizzled(lid)
-        if rerun:
-            for fw_id in lost_fw_ids:
-                self.rerun_fw(fw_id)
+                if rerun:
+                    fw_id = self.launches.find_one({"launch_id": lid}, {"fw_id": 1})['fw_id']
+                    if fw_id in lost_fw_ids:
+                        self.rerun_fw(fw_id)
 
         return lost_launch_ids, lost_fw_ids
 

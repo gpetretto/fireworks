@@ -89,7 +89,11 @@ SORT_FWS = ''  # sort equal priority FWs? "FILO" or "FIFO".
 
 EXCEPT_DETAILS_ON_RERUN = False  # add exception details to the spec when rerunning the FW
 
-PENALTY_CALCULATOR = None
+WEBSERVER_HOST = "127.0.0.1"  # default host on which the Flask web server runs
+
+WEBSERVER_PORT = 5000  # default port on which the Flask web server runs
+
+PENALTY_CALCULATOR = None #TODO add description
 
 
 def override_user_settings():

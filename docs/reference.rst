@@ -56,6 +56,7 @@ The FW spec has certain **reserved keywords** that indicate special instructions
 _tasks                  Reserved for specifying the list of FireTasks in the spec.
 _priority               Used to specify the job's priority. More information :doc:`here </priority_tutorial>`.
 _launch_dir             Pre-specify the directory to run the job rather than using default FW directory. More information :doc:`here </controlworker>`.
+_fworker                Used to control what resources run this job. More information :doc:`here </controlworker>`.
 _category               Used to control what resources run this job. More information :doc:`here </controlworker>`.
 _queueadapter           Special queue parameters for this job. More information :doc:`here </queue_tutorial_pt2>`.
 _dupefinder             Used to specify a duplicate finder object for avoiding duplicated runs. More information :doc:`here </duplicates_tutorial>`.
@@ -63,4 +64,5 @@ _allow_fizzled_parents  Run this Firework if all parents are *either* COMPLETED 
 _fizzled_parents        Reserved for automatically putting information about FIZZLED parents in a child Firework with the ``_allow_fizzled_parents`` option.
 _trackers               Reserved for specifying Trackers.
 _background_tasks       Reserved for specifying BackgroundTasks
+_fw_env                 Reserved for setting worker-specifc environment variables. More information :doc:`here </worker_tutorial>`.
 ======================  ==============

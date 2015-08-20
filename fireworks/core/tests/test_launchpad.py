@@ -440,6 +440,10 @@ class LaunchPadLostRunsDetectTest(unittest.TestCase):
         l, f = self.lp.detect_lostruns(2, max_runtime=-1)  # script ran more than -1 secs
         self.assertEqual((l, f), ([], []))
 
+        l, f = self.lp.detect_lostruns(0.01, max_runtime=5, min_runtime=0, rerun=True)
+        self.assertEqual((l, f), ([1], [1]))
+        self.assertEqual(self.lp.get_fw_by_id(1).state, 'READY')
+
     def test_state_after_run_start(self):
         # Launch the timed firework in a separate process
         class RocketProcess(Process):
@@ -687,7 +691,7 @@ class WorkflowFireworkStatesTest(unittest.TestCase):
             fw_cache_state = wf.fw_states[fw_id]
             self.assertEqual(fw_state, fw_cache_state)
 
-    #@unittest.skip("Test fails spuriously.")
+    @unittest.skip("Test fails spuriously.")
     def test_rerun_timed_fws(self):
         # Launch all fireworks in a separate process
         class RapidfireProcess(Process):
