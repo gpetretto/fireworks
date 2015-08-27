@@ -7,11 +7,11 @@
 <!-- FILTERS / NAVIGATION -->
 <div class="pull-down">
     <ul class="inline">
-        {% for s, stats in all_states %}
+        {% for s in all_states %}
         <li>
             <a href="/fw/{{s}}">
-                <span class="label {{s}}">
-                    {{stats}}
+                <span class="label {{ s }}">
+                    {{ s }}
                 </span>
             </a>
         </li>
@@ -37,6 +37,7 @@
         </tr>
     {% endfor %}
 </table>
+
 {{ pagination.links|safe }}
 
 {% endblock %}
