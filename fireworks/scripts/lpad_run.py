@@ -27,7 +27,8 @@ from fireworks import FW_INSTALL_DIR
 from fireworks.user_objects.firetasks.script_task import ScriptTask
 from fireworks.utilities.fw_serializers import DATETIME_HANDLER, recursive_dict, load_object
 from fireworks.features.stats import FWStats
-from fireworks.core.fworker import FWorker, RemoteFWorker
+from fireworks.core.fworker import FWorker
+from fireworks.utilities.fw_serializers import load_object_from_file
 from six.moves import input
 
 
@@ -551,47 +552,45 @@ def get_output_func(format):
 
 
 def calculate_penalty(args):
+    if not args.fworker_file and os.path.exists(
+            os.path.join(args.config_dir, 'my_fworker.yaml')):
+        args.fworker_file = os.path.join(args.config_dir, 'my_fworker.yaml')
+
+    if not args.queueadapter_file and os.path.exists(
+            os.path.join(args.config_dir, 'my_qadapter.yaml')):
+        args.queueadapter_file = os.path.join(args.config_dir,
+                                              'my_qadapter.yaml')
+
     if not args.penalty_calculator:
         raise ValueError("A penalty calculator should be specified either in the command or in the FW_config file.")
-    sc = load_object({'_fw_name': args.penalty_calculator, '_qadapter_file': args.queueadapter_file})
+    pc = load_object({'_fw_name': args.penalty_calculator, '_qadapter_file': args.queueadapter_file})
 
-    if not sc:
+    if not pc:
         raise ValueError("Couldn't find a penalty calculator corresponding to {}.".format(args.penalty_calculator))
 
+    fworker = FWorker.from_file(
+        args.fworker_file) if args.fworker_file else FWorker()
+
     job_parameters = json.loads(args.job_parameters) if args.job_parameters else None
-    penalty = sc.calculate_penalty(job_parameters)
-    print('Actual penalty: {}'.format(penalty))
 
-
-def upsert_fworker(args):
     lp = get_lp(args)
-    name = None
-    category = None
-    if args.fworker_file and os.path.exists(args.fworker_file):
-        fworker = FWorker.from_file(args.fworker_file)
-        name = fworker.name
-        category = fworker.category
-    if args.name:
-        name = args.name
-    if args.category:
-        category = args.category
+    fw_id = args.fw_id
 
-    if not name:
-        raise ValueError("Worker name should be specified.")
-
-    fworker = RemoteFWorker(name, args.priority, category, args.host[0], args.port, args.config_dir, args.username, args.password)
-    lp.upsert_fworker(fworker)
-
-
-def get_fworkers(args):
-    lp = get_lp(args)
-    query = {}
-    if args.names:
-        query['name'] = {'$in': args.names}
-
-    fworkers = lp.get_fworkers(query)
-    for worker in fworkers:
-        print(args.output(worker.to_dict()))
+    if fw_id:
+        query = dict(fworker.query)
+        if 'fw_id' in query:
+            query['fw_id']['$eq'] = fw_id
+        else:
+            query['fw_id'] = fw_id
+        fw = lp._get_a_fw_to_run(query, checkout=False)
+        if not fw:
+            print('Selected worker {} cannot run FW {}. Actual penalty: {}'.format(fworker.name, fw_id, None))
+        else:
+            penalty = pc.calculate_penalty(fw.spec.get('_queueadapter', {}))
+            print('Actual penalty for FW {} on worker {}: {}'.format(fw_id, fworker.name, penalty))
+    else:
+        penalty = pc.calculate_penalty(job_parameters)
+        print('Actual penalty: {}'.format(penalty))
 
 
 def lpad():
@@ -918,31 +917,13 @@ def lpad():
     calculate_penalty_parser = subparsers.add_parser('calculate_penalty', help='Calculates the penalty of the queue.')
     calculate_penalty_parser.add_argument('-jp', '--job_parameters', default=None,
                                           help='Job parameters. Provided as a json encoded dict to override the queue adapter defaults')
-    calculate_penalty_parser.add_argument('-sc', '--penalty_calculator', help='Penalty calculator class',
+    calculate_penalty_parser.add_argument('-pc', '--penalty_calculator', help='_fw_name identifier of the Penalty calculator',
                         default=PENALTY_CALCULATOR)
     calculate_penalty_parser.add_argument('-q', '--queueadapter_file', help='Path to queueadapter file',
                         default=QUEUEADAPTER_LOC)
+    calculate_penalty_parser.add_argument('-w', '--fworker_file', help='Path to fworker file', default=FWORKER_LOC)
+    calculate_penalty_parser.add_argument(*fw_id_args, type= int, help="a single fw_id", default=None)
     calculate_penalty_parser.set_defaults(func=calculate_penalty)
-
-    upsert_fworker_parser = subparsers.add_parser('upsert_fworker',
-                                                         help='Add a remote fireworker to the db.')
-    upsert_fworker_parser.add_argument('-w', '--fworker_file', help='path to fworker file', default=FWORKER_LOC)
-    upsert_fworker_parser.add_argument('-p', '--priority', help='Fworker priority', default=0, type=int)
-    upsert_fworker_parser.add_argument('-n', '--name', help='Worker name')
-    upsert_fworker_parser.add_argument('-ca', '--category', help='Worker category')
-    upsert_fworker_parser.add_argument('--host', required=True, nargs=1, help='Worker address')
-    upsert_fworker_parser.add_argument('--port', nargs=1, help='Worker ssh port', default=22, type=int)
-    upsert_fworker_parser.add_argument('-c', '--config_dir',
-                                           help='path to a directory containing the LaunchPad file (used if -l unspecified)',
-                                           default=None)
-    upsert_fworker_parser.add_argument('-u', '--username', help='Username', default=None)
-    upsert_fworker_parser.add_argument('-P', '--password', help='Password', default=None)
-    upsert_fworker_parser.set_defaults(func=upsert_fworker)
-
-    get_fworkers_parser = subparsers.add_parser('get_fworkers', help='Get remote fireworkers.')
-    get_fworkers_parser.add_argument('-n', '--names', help='Worker names', nargs='*')
-    get_fworkers_parser.set_defaults(func=get_fworkers)
-
 
     args = parser.parse_args()
 

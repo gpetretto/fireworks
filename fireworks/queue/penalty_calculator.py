@@ -11,6 +11,13 @@ import abc
 from fireworks.utilities.fw_serializers import FWSerializable, serialize_fw, load_object_from_file, load_object
 from fireworks.fw_config import QUEUEADAPTER_LOC
 
+__author__ = 'Guido Petretto'
+__copyright__ = 'Copyright 2012, The Materials Project'
+__version__ = '0.1'
+__maintainer__ = 'Guido Petretto'
+__email__ = 'g.petretto@gmail.com'
+__date__ = 'Aug 21, 2015'
+
 @six.add_metaclass(abc.ABCMeta)
 class PenaltyCalculatorBase(FWSerializable):
     def __init__(self, queue_adapter):

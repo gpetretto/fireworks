@@ -10,6 +10,7 @@ computing resource
 import json
 from fireworks.utilities.fw_serializers import FWSerializable, \
     recursive_serialize, recursive_deserialize, DATETIME_HANDLER
+from monty.serialization import loadfn
 
 __author__ = 'Anubhav Jain'
 __credits__ = 'Michael Kocher'
@@ -72,34 +73,40 @@ class FWorker(FWSerializable):
 
 
 class RemoteFWorker(FWSerializable):
-    def __init__(self, name, priority=0, category=None, host=None, port=None, config_dir=None, username=None,
-                 password=None):
+    def __init__(self, name, priority=0, category=None, host=None, port=22, username=None, password=None,  config_dir=None,
+                 launchpad_file=None, fworker_file=None, queueadapter_file=None, penalty_calculator=None, pre_command=None):
         self.name = name
         self.priority = priority
         self.category = category
         self.host = host
         self.port = port
-        self.config_dir = config_dir
         self.username = username
         self.password = password
+        self.config_dir = config_dir
+        self.launchpad_file = launchpad_file
+        self.fworker_file = fworker_file
+        self.queueadapter_file = queueadapter_file
+        self.penalty_calculator = penalty_calculator
+        self.pre_command = pre_command
 
     @recursive_serialize
     def to_dict(self):
         return {'name': self.name, 'priority': self.priority, 'category': self.category,
-                'host': self.host, 'port':self.port, 'config_dir': self.config_dir,
-                'username': self.username, 'password': self.password}
+                'host': self.host, 'port': self.port, 'username': self.username, 'password': self.password,
+                'config_dir': self.config_dir, 'launchpad_file': self.launchpad_file, 'fworker_file': self.fworker_file,
+                'queueadapter_file': self.queueadapter_file, 'penalty_calculator': self.penalty_calculator,
+                'pre_command': self.pre_command}
 
     @classmethod
     @recursive_deserialize
     def from_dict(cls, m_dict):
-        return cls(m_dict['name'], m_dict['priority'], m_dict['category'],
-                   m_dict['host'], m_dict['port'], m_dict['config_dir'],
-                   m_dict['username'], m_dict['password'])
+        return cls(**m_dict)
 
     def __str__(self):
-        out = '\n'.join(['name: '+str(self.name), 'priority: '+str(self.priority), 'categoy: '+str(self.category),
-               'host: '+str(self.host), 'port: '+str(self.port), 'config_dir: '+str(self.config_dir),
-               'username: '+str(self.username), 'password: '+str(self.password)])
+        d = self.to_dict()
+        out = '\n'.join([p+': '+str(d[p]) for p in ['name', 'priority', 'host', 'port', 'category', 'username',
+                                                    'password', 'config_dir', 'launchpad_file', 'fworker_file',
+                                                    'queueadapter_file', 'penalty_calculator', 'pre_command'] if d[p] is not None])
         return out
 
     @property
@@ -117,3 +124,17 @@ class RemoteFWorker(FWSerializable):
             if self.port:
                 self._full_host = self._full_host + ':' + str(self.port)
             return self._full_host
+
+    @classmethod
+    def list_from_file(cls, filename):
+        """
+        Loads a list of RemoteFWorkers from a file
+        """
+
+        data = loadfn(filename)
+        remote_workers = []
+        for worker_dict in data:
+            remote_workers.append(cls.from_dict(worker_dict))
+
+        return remote_workers
+

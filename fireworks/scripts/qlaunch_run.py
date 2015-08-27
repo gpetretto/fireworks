@@ -10,10 +10,11 @@ from argparse import ArgumentParser
 import os
 import sys
 import time
-from fireworks.fw_config import QUEUEADAPTER_LOC, CONFIG_FILE_DIR, FWORKER_LOC, LAUNCHPAD_LOC
-from fireworks.core.fworker import FWorker
+from fireworks.fw_config import QUEUEADAPTER_LOC, CONFIG_FILE_DIR, FWORKER_LOC, LAUNCHPAD_LOC, REMOTE_FWORKERS_LOC
+from fireworks.core.fworker import FWorker, RemoteFWorker
 from fireworks.core.launchpad import LaunchPad
 from fireworks.queue.queue_launcher import rapidfire, launch_rocket_to_queue
+from fireworks.queue.distributed_launcher import distributed_assign_rocket_to_queue, distributed_rapidfire
 from fireworks.utilities.fw_serializers import load_object_from_file
 
 __authors__ = "Anubhav Jain, Shyue Ping Ong"
@@ -37,21 +38,34 @@ def do_launch(args):
         args.queueadapter_file = os.path.join(args.config_dir,
                                               'my_qadapter.yaml')
 
+    if not args.remote_fworkers_file and os.path.exists(
+            os.path.join(args.config_dir, 'my_remote_fworkers.yaml')):
+        args.remote_fworkers_file = os.path.join(args.config_dir, 'my_remote_fworkers.yaml')
+
     launchpad = LaunchPad.from_file(
         args.launchpad_file) if args.launchpad_file else LaunchPad(
         strm_lvl=args.loglvl)
     fworker = FWorker.from_file(
         args.fworker_file) if args.fworker_file else FWorker()
     queueadapter = load_object_from_file(args.queueadapter_file)
+    remote_fworkers = RemoteFWorker.list_from_file(
+        args.remote_fworkers_file) if args.remote_fworkers_file else []
     args.loglvl = 'CRITICAL' if args.silencer else args.loglvl
 
     if args.command == 'rapidfire':
-        rapidfire(launchpad, fworker, queueadapter, args.launch_dir,
-                  args.nlaunches, args.maxjobs_queue,
-                  args.maxjobs_block, args.sleep, args.reserve, args.loglvl)
+        if args.distributed_launch:
+            distributed_rapidfire(launchpad, remote_fworkers, args.launch_dir, args.nlaunches, args.sleep,
+                                  args.blacklist_reset_freq, args.loglvl)
+        else:
+            rapidfire(launchpad, fworker, queueadapter, args.launch_dir,
+                      args.nlaunches, args.maxjobs_queue,
+                      args.maxjobs_block, args.sleep, args.reserve, args.loglvl)
     else:
-        launch_rocket_to_queue(launchpad, fworker, queueadapter,
-                               args.launch_dir, args.reserve, args.loglvl, args.fw_id)
+        if args.distributed_launch:
+            distributed_assign_rocket_to_queue(launchpad, remote_fworkers, args.loglvl, args.launch_dir, args.fw_id)
+        else:
+            launch_rocket_to_queue(launchpad, fworker, queueadapter,
+                                   args.launch_dir, args.reserve, args.loglvl, args.fw_id)
 
 def qlaunch():
     m_description = 'This program is used to submit jobs to a queueing system. Details of the job and queue \
@@ -65,7 +79,8 @@ def qlaunch():
     single_parser = subparsers.add_parser('singleshot', help='launch a single rocket to the queue')
     rapid_parser = subparsers.add_parser('rapidfire', help='launch multiple rockets to the queue')
 
-    parser.add_argument("-rh", "--remote_host", nargs="*",
+    remote_group = parser.add_mutually_exclusive_group()
+    remote_group.add_argument("-rh", "--remote_host", nargs="*",
                         help="Remote host to exec qlaunch. Right now, "
                              "only supports running from a config dir.")
     parser.add_argument("-rc", "--remote_config_dir",
@@ -108,6 +123,11 @@ def qlaunch():
     parser.add_argument('-c', '--config_dir',
                         help='path to a directory containing the config file (used if -l, -w, -q unspecified)',
                         default=CONFIG_FILE_DIR)
+    remote_group.add_argument('-dl', '--distributed_launch',
+                              help='Distributed launch mode. Connects to remote workes to find the most favourable.',
+                              action='store_true', default=False)
+    parser.add_argument('-rw', '--remote_fworkers_file', help='path to remote fworkers file used for distributed '
+                                                              'launch mode', default=REMOTE_FWORKERS_LOC)
 
     rapid_parser.add_argument('-m', '--maxjobs_queue',
                               help='maximum jobs to keep in queue for this user', default=10,
@@ -117,12 +137,15 @@ def qlaunch():
                               default=500, type=int)
     rapid_parser.add_argument('--nlaunches', help='num_launches (int or "infinite"; default 0 is all jobs in DB)', default=0)
     rapid_parser.add_argument('--sleep', help='sleep time between loops', default=None, type=int)
+    rapid_parser.add_argument('-br', '--blacklist_reset_freq', default=20, type=int,
+                              help='Number of rounds after which the list of blacklisted FW ids is reset. '
+                                   'Only for distributed launch mode.')
 
-    single_parser.add_argument('-f', '--fw_id', help='specific fw_id to run', default=None, type=int)
+    single_parser.add_argument('-i', '--fw_id', help='specific fw_id to run', default=None, type=int)
 
     args = parser.parse_args()
 
-    if args.remote_host:
+    if args.remote_host or args.distributed_launch:
         try:
             from fabric.api import settings, run, cd
             from fabric.network import disconnect_all
@@ -131,6 +154,14 @@ def qlaunch():
             print("Remote options require the Fabric package to be "
                   "installed!")
             sys.exit(-1)
+
+    if args.command == 'singleshot' and args.fw_id and not args.reserve:
+        print("fw_id option requires reserve (-r) option!")
+        sys.exit(-1)
+
+    if args.distributed_launch and not args.reserve:
+        print("Distribute launch option requires reserve (-r) option!")
+        sys.exit(-1)
 
     if args.remote_setup:
         if args.remote_host:

@@ -66,6 +66,7 @@ RAPIDFIRE_SLEEP_SECS = 60  # seconds to sleep between rapidfire loops
 LAUNCHPAD_LOC = None  # where to find the my_launchpad.yaml file
 FWORKER_LOC = None  # where to find the my_fworker.yaml file
 QUEUEADAPTER_LOC = None  # where to find the my_queueadapter.yaml file
+REMOTE_FWORKERS_LOC = None  # where to find the my_remote_fworkers.yaml file
 
 CONFIG_FILE_DIR = '.'  # directory containing config files (if not individually set)
 
@@ -93,7 +94,7 @@ WEBSERVER_HOST = "127.0.0.1"  # default host on which the Flask web server runs
 
 WEBSERVER_PORT = 5000  # default port on which the Flask web server runs
 
-PENALTY_CALCULATOR = None #TODO add description
+PENALTY_CALCULATOR = None  # _fw_name identifier of the penalty calculator
 
 
 def override_user_settings():
@@ -134,9 +135,9 @@ def override_user_settings():
             else:
                 globals()[key] = v
 
-    for k in ["LAUNCHPAD_LOC", "FWORKER_LOC", "QUEUEADAPTER_LOC"]:
+    for k in ["LAUNCHPAD_LOC", "FWORKER_LOC", "QUEUEADAPTER_LOC", "REMOTE_FWORKERS_LOC"]:
         if globals().get(k, None) is None:
-            fname = "my_{}.yaml".format(k.split("_")[0].lower())
+            fname = "my_{}.yaml".format(k.rsplit("_", 1)[0].lower())
             m_paths = []
             if os.path.realpath(CONFIG_FILE_DIR) not in test_paths:
                 test_paths.insert(0, CONFIG_FILE_DIR)

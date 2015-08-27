@@ -39,6 +39,7 @@ def launch_rocket_to_queue(launchpad, fworker, qadapter, launcher_dir='.', reser
     :param launcher_dir: (str) The directory where to submit the job
     :param reserve: (bool) Whether to queue in reservation mode
     :param strm_lvl: (str) level at which to stream log messages
+    :param fw_id: (int) if set, a particular Firework to run
     """
 
     fworker = fworker if fworker else FWorker()
@@ -57,7 +58,8 @@ def launch_rocket_to_queue(launchpad, fworker, qadapter, launcher_dir='.', reser
     if '--offline' in qadapter['rocket_launch'] and not reserve:
         raise ValueError("Must use reservation mode (-r option) of qlaunch when using offline option of rlaunch!!")
 
-    reserve = True if fw_id else reserve
+    if fw_id and not reserve:
+        raise ValueError("Must use reservation mode (-r option) of qlaunch when using the --fw_id option!")
 
     if reserve and 'singleshot' not in qadapter.get('rocket_launch', ''):
         raise ValueError('Reservation mode of queue launcher only works for singleshot Rocket Launcher!')

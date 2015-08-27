@@ -5,6 +5,13 @@ from __future__ import unicode_literals, division
 from fireworks.utilities.fw_utilities import explicit_serialize
 from fireworks.queue.penalty_calculator import PenaltyCalculatorBase
 
+__author__ = 'Guido Petretto'
+__copyright__ = 'Copyright 2012, The Materials Project'
+__version__ = '0.1'
+__maintainer__ = 'Guido Petretto'
+__email__ = 'g.petretto@gmail.com'
+__date__ = 'Aug 27, 2015'
+
 @explicit_serialize
 class EstimatedDelayPenaltyCalculator(PenaltyCalculatorBase):
 

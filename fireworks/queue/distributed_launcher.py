@@ -15,37 +15,65 @@ import time
 import traceback
 import datetime
 import os
+import logging
 from fireworks.utilities.fw_utilities import get_fw_logger, log_exception
 from fireworks.fw_config import QUEUE_UPDATE_INTERVAL, RAPIDFIRE_SLEEP_SECS, FW_BLOCK_FORMAT
 
+__author__ = 'Guido Petretto'
+__copyright__ = 'Copyright 2012, The Materials Project'
+__version__ = '0.1'
+__maintainer__ = 'Guido Petretto'
+__email__ = 'g.petretto@gmail.com'
+__date__ = 'Aug 27, 2015'
 
-def assign_rocket_to_queue(launchpad, strm_lvl='INFO', launcher_dir='.', blacklisted_fw_ids=None):
+
+def distributed_assign_rocket_to_queue(launchpad, workers, strm_lvl='INFO', launcher_dir='.', fw_id=None,
+                                       blacklisted_fw_ids=None):
     """
     Submit a single job to the best worker available, based on the calculation of a penalty
 
     :param launchpad: (LaunchPad)
+    :param workers: list of RemoteFWorker
     :param strm_lvl: (str) level at which to stream log messages
     :param launcher_dir: (str) The directory where to submit the job
+    :param fw_id: (int) if set, a particular Firework to run
     :param blacklisted_fw_ids: list of blacklisted FW ids that will be ignored
     :return: a boolean, True if a job was submitted and an updated list of blacklisted FW ids
     """
 
     try:
+        import fabric
         from fabric.api import settings, run, cd, parallel, env, execute, prefix
         from fabric.network import disconnect_all
     except ImportError:
         print("Remote options require the Fabric package to be installed!")
         sys.exit(-1)
 
-    if blacklisted_fw_ids is None:
-        blacklisted_fw_ids = []
+    blacklisted_fw_ids = [] if blacklisted_fw_ids is None else list(blacklisted_fw_ids)
 
     l_logger = get_fw_logger('queue.launcher', l_dir=launchpad.logdir, stream_level=strm_lvl)
 
-    workers = launchpad.get_fworkers()
+    if fw_id in blacklisted_fw_ids:
+        l_logger.warning("FW {} has been blacklisted.".format(fw_id))
+        return None, blacklisted_fw_ids
+
+    workers_dict = {w.full_host: w for w in workers}
+
+    # setup fabric output level based on strm_lvl
+    stream_level = getattr(logging, strm_lvl)
+    if stream_level >= logging.INFO:
+        fabric.state.output['output'] = False
+        fabric.state.output['status'] = False
+    if stream_level >= logging.WARNING:
+        fabric.state.output['running'] = False
+    if stream_level >= logging.ERROR:
+        fabric.state.output['everything'] = False
 
     while True:
-        fw = launchpad.get_first_fw_to_run(blacklisted_fw_ids)
+        if fw_id in blacklisted_fw_ids:
+            break
+        query = {'fw_id': {'$nin': blacklisted_fw_ids}}
+        fw = launchpad._get_a_fw_to_run(query, fw_id, False)
         if not fw:
             break
 
@@ -71,12 +99,26 @@ def assign_rocket_to_queue(launchpad, strm_lvl='INFO', launcher_dir='.', blackli
             continue
 
         @parallel
-        def get_penalty(qadapter_parameters):
+        def get_penalty(qadapter_parameters, workers_data, fw_id):
             try:
-                command = 'lpad calculate_penalty'
+                current_worker = workers_data[env.host_string]
+                command = 'lpad '
+                if current_worker.config_dir:
+                    command += '-c {} '.format(current_worker.config_dir)
+                if current_worker.launchpad_file:
+                    command += '-l {} '.format(current_worker.launchpad_file)
+                command += 'calculate_penalty '
+                if current_worker.queueadapter_file:
+                    command += '-q {} '.format(current_worker.queueadapter_file)
+                if current_worker.fworker_file:
+                    command += '-w {} '.format(current_worker.fworker_file)
+                if current_worker.penalty_calculator:
+                    command += '-pc {} '.format(current_worker.penalty_calculator)
                 if qadapter_parameters:
-                    command += '-q {}'.format(json.loads(qadapter_parameters))
-                out = run(command)
+                    command += '-jp {}'.format(json.loads(qadapter_parameters))
+                command += '-i {} '.format(fw_id)
+                with prefix(current_worker.pre_command or 'true'):
+                    out = run(command)
                 penalty = out.split()[-1]
                 if penalty == 'None':
                     return None
@@ -94,9 +136,9 @@ def assign_rocket_to_queue(launchpad, strm_lvl='INFO', launcher_dir='.', blackli
                 env.hosts.append(wrk.full_host)
                 if wrk.password:
                     env.passwords[wrk.full_host] = wrk.password
-            penalties = execute(get_penalty, fw.spec.get('_queueadapter', None))
+            penalties = execute(get_penalty, fw.spec.get('_queueadapter', None), workers_dict, fw.fw_id)
 
-            # remove workers that returned None and calculated priority - penalty for each host
+            # remove workers that returned None and calculate (priority - penalty) for each host
             priorities = {w.full_host: w.priority - penalties[w.full_host]
                           for w in suitable_workers if penalties[w.full_host] is not None}
 
@@ -112,16 +154,29 @@ def assign_rocket_to_queue(launchpad, strm_lvl='INFO', launcher_dir='.', blackli
             # submit the job
             try:
                 with settings(host_string=best_host):
-                    # create the launcher_dir and qlaunch
-                    with prefix('mkdir -p {}'.format(launcher_dir)):
-                        run("qlaunch --launch_dir {} --loglvl {} singleshot -f {}"
-                            .format(launcher_dir, fw.fw_id, strm_lvl))
-                        l_logger.info("Rocket id {} launched on host {} (priority {})."
-                                      .format(fw.fw_id, best_host, priorities[best_host]))
-                        return True, blacklisted_fw_ids
+                    best_worker =  workers_dict[best_host]
+                    with prefix(best_worker.pre_command or 'true'):
+                        # create the launcher_dir and qlaunch
+                        with prefix('mkdir -p {}'.format(launcher_dir)):
+                            command = "qlaunch --launch_dir {} --loglvl {} -r ".format(launcher_dir, strm_lvl)
+                            if best_worker.config_dir:
+                                command += '-c {} '.format(best_worker.config_dir)
+                            if best_worker.launchpad_file:
+                                command += '-l {} '.format(best_worker.launchpad_file)
+                            if best_worker.queueadapter_file:
+                                command += '-q {} '.format(best_worker.queueadapter_file)
+                            if best_worker.fworker_file:
+                                command += '-w {} '.format(best_worker.fworker_file)
+                            command += "singleshot -i {}".format(fw.fw_id)
+                            run(command)
+                            l_logger.info("Rocket id {} launched on host {} (priority {})."
+                                          .format(fw.fw_id, best_host, priorities[best_host]))
+                            return True, blacklisted_fw_ids
             except:
                 l_logger.error("Error submitting FW id {} to host {}.".format(fw.fw_id, best_host))
                 traceback.print_exc()
+                l_logger.info("Firework {} blacklisted.".format(fw.fw_id))
+                blacklisted_fw_ids.append(fw.fw_id)
                 return False, blacklisted_fw_ids
         finally:
             disconnect_all()
@@ -130,11 +185,13 @@ def assign_rocket_to_queue(launchpad, strm_lvl='INFO', launcher_dir='.', blackli
     return False, blacklisted_fw_ids
 
 
-def rapidfire(launchpad, launch_dir='.', nlaunches=0, sleep_time=None, blacklist_reset_freq=20, strm_lvl='INFO'):
+def distributed_rapidfire(launchpad, workers, launch_dir='.', nlaunches=0, sleep_time=None,
+                          blacklist_reset_freq=20, strm_lvl='INFO'):
     """
     Submit many jobs to remote queues based on the calculated penalties.
 
     :param launchpad: (LaunchPad)
+    :param workers: list of RemoteFWorker
     :param launch_dir: remote directory where we want to write the blocks
     :param nlaunches: total number of launches desired; "infinite" for loop, 0 for one round
     :param sleep_time: (int) secs to sleep between rapidfire loop iterations
@@ -151,7 +208,7 @@ def rapidfire(launchpad, launch_dir='.', nlaunches=0, sleep_time=None, blacklist
     round_counter = 0
     try:
         while True:
-            while launchpad.get_first_fw_to_run(blacklisted_fw_ids) is not None:
+            while launchpad._get_a_fw_to_run({'fw_id': {'$nin': blacklisted_fw_ids}}, checkout=False) is not None:
                 l_logger.info('Launching a rocket!')
 
                 #prepare the path for the launcher directory
@@ -159,8 +216,8 @@ def rapidfire(launchpad, launch_dir='.', nlaunches=0, sleep_time=None, blacklist
                 launcher_dir = os.path.join(launch_dir, 'launcher_' + time_now)
 
                 # assign a single job
-                success, blacklisted_fw_ids = assign_rocket_to_queue(launchpad, strm_lvl,
-                                                                     launcher_dir, blacklisted_fw_ids)
+                success, blacklisted_fw_ids = distributed_assign_rocket_to_queue(launchpad, workers, strm_lvl,
+                                                                                 launcher_dir, None, blacklisted_fw_ids)
                 if not success:
                     l_logger.info("No rocket launched!")
                 else:
