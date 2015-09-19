@@ -16,7 +16,6 @@ __maintainer__ = 'Anubhav Jain'
 __email__ = 'ajain@lbl.gov'
 __date__ = 'Feb 18, 2013'
 
-# TODO: document!
 # TODO: add maximum length of 10,000 chars for stored fields
 
 
@@ -39,8 +38,8 @@ class ScriptTask(FireTaskBase):
 
     def _run_task_internal(self, fw_spec, stdin):
         # run the program
-        stdout = subprocess.PIPE if self.store_stdout or self.stdout_file else sys.stdout
-        stderr = subprocess.PIPE if self.store_stderr or self.stderr_file else sys.stderr
+        stdout = subprocess.PIPE if self.store_stdout or self.stdout_file else None
+        stderr = subprocess.PIPE if self.store_stderr or self.stderr_file else None
         returncodes = []
         for s in self.script:
             p = subprocess.Popen(

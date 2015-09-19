@@ -28,7 +28,7 @@ __maintainer__ = 'Anubhav Jain'
 __email__ = 'ajain@lbl.gov'
 __date__ = 'Dec 12, 2012'
 
-# TODO: clean up method signatures
+
 def launch_rocket_to_queue(launchpad, fworker, qadapter, launcher_dir='.', reserve=False, strm_lvl='INFO', fw_id=None):
     """
     Submit a single job to the queue.
