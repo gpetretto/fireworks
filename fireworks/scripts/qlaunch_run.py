@@ -65,7 +65,7 @@ def do_launch(args):
             distributed_assign_rocket_to_queue(launchpad, remote_fworkers, args.loglvl, args.launch_dir, args.fw_id)
         else:
             launch_rocket_to_queue(launchpad, fworker, queueadapter,
-                                   args.launch_dir, args.reserve, args.loglvl, args.fw_id)
+                                   args.launch_dir, args.reserve, args.loglvl, args.fw_id, False)
 
 def qlaunch():
     m_description = 'This program is used to submit jobs to a queueing system. Details of the job and queue \
