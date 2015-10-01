@@ -77,27 +77,6 @@ def distributed_assign_rocket_to_queue(launchpad, workers, strm_lvl='INFO', laun
         if not fw:
             break
 
-        requested_worker = fw.spec.get('_fworker', None)
-        requested_category = fw.spec.get('_category', None)
-        # check workers that can actually run the job
-        suitable_workers = []
-        if requested_worker:
-            for wrk in workers:
-                if requested_worker == wrk.name:
-                    suitable_workers = [wrk]
-                    break
-        else:
-            for wrk in workers:
-                # only workers in the specified category
-                if not wrk.category or (requested_category and requested_category == wrk.category):
-                    suitable_workers.append(wrk)
-
-        # if no suitable worker, blacklist jobs and try again
-        if not suitable_workers:
-            blacklisted_fw_ids.append(fw.fw_id)
-            l_logger.info("No suitable worker to launch rocket id {}. Job blacklisted.".format(fw.fw_id))
-            continue
-
         @parallel
         def get_penalty(qadapter_parameters, workers_data, fw_id):
             try:
@@ -114,6 +93,8 @@ def distributed_assign_rocket_to_queue(launchpad, workers, strm_lvl='INFO', laun
                     command += '-w {} '.format(current_worker.fworker_file)
                 if current_worker.penalty_calculator:
                     command += '-pc {} '.format(current_worker.penalty_calculator)
+                if current_worker.maxjobs_queue:
+                    command += '-m {} '.format(current_worker.maxjobs_queue)
                 if qadapter_parameters:
                     command += '-jp {}'.format(json.loads(qadapter_parameters))
                 command += '-i {} '.format(fw_id)
@@ -132,7 +113,7 @@ def distributed_assign_rocket_to_queue(launchpad, workers, strm_lvl='INFO', laun
             # get all the penalties
             env.hosts = []
             env.use_ssh_config = True
-            for wrk in suitable_workers:
+            for wrk in workers:
                 env.hosts.append(wrk.full_host)
                 if wrk.password:
                     env.passwords[wrk.full_host] = wrk.password
@@ -140,7 +121,7 @@ def distributed_assign_rocket_to_queue(launchpad, workers, strm_lvl='INFO', laun
 
             # remove workers that returned None and calculate (priority - penalty) for each host
             priorities = {w.full_host: w.priority - penalties[w.full_host]
-                          for w in suitable_workers if penalties[w.full_host] is not None}
+                          for w in workers if penalties[w.full_host] is not None}
 
             # get the best host to submit the job
             if priorities:

@@ -577,10 +577,26 @@ def calculate_penalty(args):
     if not pc:
         raise ValueError("Couldn't find a penalty calculator corresponding to {}.".format(args.penalty_calculator))
 
+    if args.maxjobs_queue:
+        counter = 0
+        njobs_in_queue = None
+        while True:
+            try:
+                njobs_in_queue = pc.queue_adapter.get_njobs_in_queue()
+            except:
+                traceback.print_exc()
+            counter += 1
+            # only 3 short tries, since this should be called remotely over ssh connection
+            if njobs_in_queue is not None or counter >= 3:
+                break
+            time.sleep(5)
+
+        if njobs_in_queue is None or njobs_in_queue >= args.maxjobs_queue:
+            print("Number of current jobs in queue does not allow submission: {}. Actual penalty: {}".format(njobs_in_queue, None))
+            return
+
     fworker = FWorker.from_file(
         args.fworker_file) if args.fworker_file else FWorker()
-
-    job_parameters = json.loads(args.job_parameters) if args.job_parameters else None
 
     lp = get_lp(args)
     fw_id = args.fw_id
@@ -598,6 +614,7 @@ def calculate_penalty(args):
             penalty = pc.calculate_penalty(fw.spec.get('_queueadapter', {}))
             print('Actual penalty for FW {} on worker {}: {}'.format(fw_id, fworker.name, penalty))
     else:
+        job_parameters = json.loads(args.job_parameters) if args.job_parameters else None
         penalty = pc.calculate_penalty(job_parameters)
         print('Actual penalty: {}'.format(penalty))
 
@@ -929,10 +946,12 @@ def lpad():
     calculate_penalty_parser.add_argument('-jp', '--job_parameters', default=None,
                                           help='Job parameters. Provided as a json encoded dict to override the queue adapter defaults')
     calculate_penalty_parser.add_argument('-pc', '--penalty_calculator', help='_fw_name identifier of the Penalty calculator',
-                        default=PENALTY_CALCULATOR)
+                                          default=PENALTY_CALCULATOR)
     calculate_penalty_parser.add_argument('-q', '--queueadapter_file', help='Path to queueadapter file',
-                        default=QUEUEADAPTER_LOC)
+                                          default=QUEUEADAPTER_LOC)
     calculate_penalty_parser.add_argument('-w', '--fworker_file', help='Path to fworker file', default=FWORKER_LOC)
+    calculate_penalty_parser.add_argument('-m', '--maxjobs_queue', help='Maximum jobs to keep in queue for this user',
+                                          default=None, type=int)
     calculate_penalty_parser.add_argument(*fw_id_args, type= int, help="a single fw_id", default=None)
     calculate_penalty_parser.set_defaults(func=calculate_penalty)
 

@@ -73,11 +73,11 @@ class FWorker(FWSerializable):
 
 
 class RemoteFWorker(FWSerializable):
-    def __init__(self, name, priority=0, category=None, host=None, port=22, username=None, password=None,  config_dir=None,
-                 launchpad_file=None, fworker_file=None, queueadapter_file=None, penalty_calculator=None, pre_command=None):
+    def __init__(self, name, priority=0, host=None, port=22, username=None, password=None,  config_dir=None,
+                 launchpad_file=None, fworker_file=None, queueadapter_file=None, penalty_calculator=None, pre_command=None,
+                 maxjobs_queue=None):
         self.name = name
         self.priority = priority
-        self.category = category
         self.host = host
         self.port = port
         self.username = username
@@ -88,14 +88,15 @@ class RemoteFWorker(FWSerializable):
         self.queueadapter_file = queueadapter_file
         self.penalty_calculator = penalty_calculator
         self.pre_command = pre_command
+        self.maxjobs_queue = maxjobs_queue
 
     @recursive_serialize
     def to_dict(self):
-        return {'name': self.name, 'priority': self.priority, 'category': self.category,
-                'host': self.host, 'port': self.port, 'username': self.username, 'password': self.password,
-                'config_dir': self.config_dir, 'launchpad_file': self.launchpad_file, 'fworker_file': self.fworker_file,
+        return {'name': self.name, 'priority': self.priority, 'host': self.host,
+                'port': self.port, 'username': self.username, 'password': self.password, 'config_dir': self.config_dir,
+                'launchpad_file': self.launchpad_file, 'fworker_file': self.fworker_file,
                 'queueadapter_file': self.queueadapter_file, 'penalty_calculator': self.penalty_calculator,
-                'pre_command': self.pre_command}
+                'pre_command': self.pre_command, 'maxjobs_queue': self.maxjobs_queue}
 
     @classmethod
     @recursive_deserialize
@@ -103,11 +104,7 @@ class RemoteFWorker(FWSerializable):
         return cls(**m_dict)
 
     def __str__(self):
-        d = self.to_dict()
-        out = '\n'.join([p+': '+str(d[p]) for p in ['name', 'priority', 'host', 'port', 'category', 'username',
-                                                    'password', 'config_dir', 'launchpad_file', 'fworker_file',
-                                                    'queueadapter_file', 'penalty_calculator', 'pre_command'] if d[p] is not None])
-        return out
+        return "Remote fireworker: {}".format(self.name)
 
     @property
     def full_host(self):

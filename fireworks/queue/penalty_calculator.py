@@ -45,3 +45,7 @@ class PenaltyCalculatorBase(FWSerializable):
             return cls(load_object(m_dict['qadapter']))
         else:
             return cls.from_qadapter_file(m_dict.get('_qadapter_file'))
+
+    @property
+    def queue_adapter(self):
+        return self._queue_adapter
