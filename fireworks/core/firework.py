@@ -983,12 +983,14 @@ class Workflow(FWSerializable):
         if m_state != prev_state:
             updated_ids.add(fw_id)
 
+            fws_to_refresh = set(self.links[fw_id])
             if m_state == 'COMPLETED':
-                updated_ids = updated_ids.union(self.apply_action(m_action, fw.fw_id))
+                fws_to_refresh = fws_to_refresh.union(self.apply_action(m_action, fw.fw_id))
 
             # refresh all the children and other updated ids (note that defuse_workflow option can
             # affect other branches)
-            for child_id in updated_ids.union(self.links[fw_id]):
+            updated_ids = updated_ids.union(fws_to_refresh)
+            for child_id in fws_to_refresh:
                 updated_ids = updated_ids.union(self.refresh(child_id, updated_ids))
 
         self.updated_on = datetime.utcnow()
